@@ -20,6 +20,11 @@ SPORT_KEYS: Dict[str, Dict[str, Any]] = {
     "soccer_spain_la_liga": {"league_id": 140, "league_name": "La Liga"},
     "soccer_germany_bundesliga": {"league_id": 78, "league_name": "Bundesliga"},
     "soccer_italy_serie_a": {"league_id": 135, "league_name": "Serie A"},
+    "soccer_netherlands_eredivisie": {"league_id": 88, "league_name": "Eredivisie"},
+    "soccer_portugal_primeira_liga": {"league_id": 94, "league_name": "Primeira Liga"},
+    "soccer_england_championship": {"league_id": 40, "league_name": "Championship"},
+    "soccer_denmark_superliga": {"league_id": 119, "league_name": "Superliga"},
+    "soccer_sweden_allsvenskan": {"league_id": 113, "league_name": "Allsvenskan"},
 }
 
 

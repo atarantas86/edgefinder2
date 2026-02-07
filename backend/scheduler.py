@@ -70,6 +70,11 @@ def refresh_odds() -> int:
         "soccer_spain_la_liga",
         "soccer_germany_bundesliga",
         "soccer_italy_serie_a",
+        "soccer_netherlands_eredivisie",
+        "soccer_portugal_primeira_liga",
+        "soccer_england_championship",
+        "soccer_denmark_superliga",
+        "soccer_sweden_allsvenskan",
     ]
     init_db()
     db = SessionLocal()
