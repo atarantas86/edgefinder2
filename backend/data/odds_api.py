@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from loguru import logger
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from config import get_settings
@@ -54,34 +56,39 @@ class OddsAPI:
     ) -> List[Tuple[Dict[str, Any], Match]]:
         odds_response = self.get_odds(sport=sport)
         fixtures: List[Tuple[Dict[str, Any], Match]] = []
-        next_negative_fixture_id: Optional[int] = None
         for event in odds_response:
             match = self._match_fixture(db, event)
             if not match:
-                next_negative_fixture_id = self._next_negative_fixture_id(
-                    db,
-                    next_negative_fixture_id,
-                )
-                league_id, league_name = self._league_details(
+                home_team = event.get("home_team", "Unknown")
+                away_team = event.get("away_team", "Unknown")
+                commence = event.get("commence_time", "")
+                if not commence:
+                    continue
+                event_dt = datetime.fromisoformat(commence.replace("Z", "+00:00"))
+
+                min_id = db.query(func.min(Match.fixture_id)).scalar() or 0
+                new_id = min(min_id, 0) - 1
+
+                _, league_name = self._league_details(
                     sport,
                     event.get("sport_title", sport),
                 )
-                home_team = event.get("home_team", "Home")
-                away_team = event.get("away_team", "Away")
+
                 match = Match(
-                    fixture_id=next_negative_fixture_id,
+                    fixture_id=new_id,
                     home_team=home_team,
                     away_team=away_team,
                     league=league_name,
-                    kickoff=event.get("commence_time", ""),
+                    kickoff=event_dt.isoformat(),
                     status="NS",
                 )
                 db.add(match)
-                db.flush()
+                db.commit()
                 logger.info(
-                    "Fixture créée depuis Odds API: {} vs {}",
+                    "Fixture créée depuis Odds API: {} vs {} (id={})",
                     home_team,
                     away_team,
+                    new_id,
                 )
             fixtures.append((event, match))
         return fixtures
