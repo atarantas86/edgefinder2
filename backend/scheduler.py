@@ -17,13 +17,14 @@ from engine.value_detector import detect_value_bets
 from models.poisson import run_bivariate_poisson
 
 
-def refresh_fixtures() -> None:
+def refresh_fixtures() -> int:
     logger.info("Refreshing fixtures")
     api = FootballAPI()
     today = datetime.utcnow().date().isoformat()
     response = api.get_fixtures(date=today)
     init_db()
     db = SessionLocal()
+    fixtures_added = 0
     try:
         for item in response.get("response", []):
             fixture = item.get("fixture", {})
@@ -45,40 +46,26 @@ def refresh_fixtures() -> None:
                     status=fixture.get("status", {}).get("short", "scheduled"),
                 )
             )
+            fixtures_added += 1
         db.commit()
     finally:
         db.close()
+    return fixtures_added
 
 
-def refresh_odds() -> None:
+def refresh_odds() -> int:
     logger.info("Refreshing odds")
     api = OddsAPI()
     sports = ["soccer_epl", "soccer_france_ligue_one", "soccer_spain_la_liga"]
     init_db()
     db = SessionLocal()
+    odds_added = 0
     try:
         for sport in sports:
-            odds_response = api.get_odds(sport=sport)
-            for event in odds_response:
-                home = event.get("home_team")
-                away = event.get("away_team")
-                commence = event.get("commence_time", "")
-                match = (
-                    db.query(Match)
-                    .filter(Match.home_team == home, Match.away_team == away)
-                    .first()
-                )
-                if not match:
-                    match = Match(
-                        fixture_id=hash(f"{home}-{away}-{commence}") % 10**9,
-                        home_team=home,
-                        away_team=away,
-                        league=event.get("sport_title", sport),
-                        kickoff=commence,
-                        status="scheduled",
-                    )
-                    db.add(match)
-                    db.flush()
+            fixtures = api.fetch_odds_for_sport(db, sport=sport)
+            for event, match in fixtures:
+                home = event.get("home_team") or ""
+                away = event.get("away_team") or ""
                 for bookmaker in event.get("bookmakers", []):
                     for market in bookmaker.get("markets", []):
                         market_key = market.get("key")
@@ -103,9 +90,11 @@ def refresh_odds() -> None:
                                     source=bookmaker.get("title", "the_odds_api"),
                                 )
                             )
+                            odds_added += 1
         db.commit()
     finally:
         db.close()
+    return odds_added
 
 
 def generate_signals() -> None:
