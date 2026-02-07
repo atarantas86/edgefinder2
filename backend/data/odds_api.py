@@ -59,37 +59,31 @@ class OddsAPI:
         for event in odds_response:
             match = self._match_fixture(db, event)
             if not match:
-                home_team = event.get("home_team", "Unknown")
-                away_team = event.get("away_team", "Unknown")
+                home = event.get("home_team", "Unknown")
+                away = event.get("away_team", "Unknown")
                 commence = event.get("commence_time", "")
                 if not commence:
                     continue
                 event_dt = datetime.fromisoformat(commence.replace("Z", "+00:00"))
-
                 min_id = db.query(func.min(Match.fixture_id)).scalar() or 0
                 new_id = min(min_id, 0) - 1
-
-                _, league_name = self._league_details(
-                    sport,
-                    event.get("sport_title", sport),
-                )
-
+                league_name_map = {
+                    details["league_id"]: key.replace("soccer_", "").replace("_", " ").title()
+                    for key, details in SPORT_KEYS.items()
+                }
+                league_id = SPORT_KEYS.get(sport, {}).get("league_id")
+                l_name = league_name_map.get(league_id, f"League {league_id}")
                 match = Match(
                     fixture_id=new_id,
-                    home_team=home_team,
-                    away_team=away_team,
-                    league=league_name,
+                    home_team=home,
+                    away_team=away,
+                    league=l_name,
                     kickoff=event_dt.isoformat(),
                     status="NS",
                 )
                 db.add(match)
                 db.commit()
-                logger.info(
-                    "Fixture créée depuis Odds API: {} vs {} (id={})",
-                    home_team,
-                    away_team,
-                    new_id,
-                )
+                logger.info(f"Fixture créée depuis Odds API: {home} vs {away} (id={new_id})")
             fixtures.append((event, match))
         return fixtures
 
