@@ -48,6 +48,7 @@ class Signal(Base):
     id = Column(Integer, primary_key=True, index=True)
     match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
     outcome = Column(String, nullable=False)
+    market_type = Column(String, default="h2h")
     probability = Column(Float, nullable=False)
     odds = Column(Float, nullable=False)
     edge = Column(Float, nullable=False)
@@ -65,11 +66,26 @@ class Bet(Base):
     id = Column(Integer, primary_key=True, index=True)
     signal_id = Column(Integer, ForeignKey("signals.id"), nullable=False)
     stake = Column(Float, nullable=False)
+    opening_odds = Column(Float, default=0.0)
     result = Column(String, default="open")
     profit = Column(Float, default=0.0)
     placed_at = Column(DateTime, default=datetime.utcnow)
 
     signal = relationship("Signal", back_populates="bets")
+    closing_line = relationship("ClosingLine", back_populates="bet", uselist=False)
+
+
+class ClosingLine(Base):
+    __tablename__ = "closing_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bet_id = Column(Integer, ForeignKey("bets.id"), nullable=False, unique=True)
+    opening_odds = Column(Float, nullable=False)
+    closing_odds = Column(Float, nullable=False)
+    clv = Column(Float, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.utcnow)
+
+    bet = relationship("Bet", back_populates="closing_line")
 
 
 class TeamStats(Base):
@@ -88,6 +104,8 @@ class TeamStats(Base):
     xga_def_away = Column(Float, nullable=False)
     matches_home = Column(Integer, default=0)
     matches_away = Column(Integer, default=0)
+    form_home = Column(Float, default=0.5)
+    form_away = Column(Float, default=0.5)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 

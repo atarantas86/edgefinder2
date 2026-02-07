@@ -34,6 +34,8 @@ class PoissonOutput:
     away_win: float
     over_25: float
     under_25: float
+    btts_yes: float
+    btts_no: float
 
 
 def _bivariate_poisson_pmf(
@@ -73,6 +75,7 @@ def summarize_from_matrix(score_matrix: ScoreMatrix) -> Dict[str, float]:
     draw = 0.0
     away_win = 0.0
     over_25 = 0.0
+    btts_yes = 0.0
     for home_goals in range(max_goals + 1):
         for away_goals in range(max_goals + 1):
             prob = score_matrix.probability(home_goals, away_goals)
@@ -84,13 +87,18 @@ def summarize_from_matrix(score_matrix: ScoreMatrix) -> Dict[str, float]:
                 away_win += prob
             if home_goals + away_goals > 2:
                 over_25 += prob
+            if home_goals >= 1 and away_goals >= 1:
+                btts_yes += prob
     under_25 = 1.0 - over_25
+    btts_no = 1.0 - btts_yes
     return {
         "home_win": home_win,
         "draw": draw,
         "away_win": away_win,
         "over_25": over_25,
         "under_25": under_25,
+        "btts_yes": btts_yes,
+        "btts_no": btts_no,
     }
 
 
@@ -112,4 +120,6 @@ def run_bivariate_poisson(
         away_win=summary["away_win"],
         over_25=summary["over_25"],
         under_25=summary["under_25"],
+        btts_yes=summary["btts_yes"],
+        btts_no=summary["btts_no"],
     )

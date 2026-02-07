@@ -64,7 +64,13 @@ def refresh_fixtures() -> int:
 def refresh_odds() -> int:
     logger.info("Refreshing odds")
     api = OddsAPI()
-    sports = ["soccer_epl", "soccer_france_ligue_one", "soccer_spain_la_liga"]
+    sports = [
+        "soccer_epl",
+        "soccer_france_ligue_one",
+        "soccer_spain_la_liga",
+        "soccer_germany_bundesliga",
+        "soccer_italy_serie_a",
+    ]
     init_db()
     db = SessionLocal()
     odds_added = 0
@@ -156,11 +162,65 @@ def _compute_league_averages(all_stats: List[TeamStats]) -> Dict[str, LeagueAver
     return result
 
 
+def _insert_value_signals(
+    db,
+    match: Match,
+    model_probs: Dict[str, float],
+    market_odds: Dict[str, float],
+    market_type: str,
+) -> None:
+    """Detect value bets and insert Signal rows."""
+    value_bets = detect_value_bets(model_probs, market_odds)
+    for bet in value_bets:
+        confidence = compute_confidence(
+            edge=bet["edge"],
+            convergence=0.7,
+            volume=0.6,
+            stability=0.65,
+            inefficiency=0.5,
+        )
+        existing = (
+            db.query(Signal)
+            .filter(
+                Signal.match_id == match.id,
+                Signal.outcome == bet["outcome"],
+                Signal.market_type == market_type,
+            )
+            .first()
+        )
+        if existing:
+            continue
+        db.add(
+            Signal(
+                match_id=match.id,
+                outcome=bet["outcome"],
+                market_type=market_type,
+                probability=bet["probability"],
+                odds=bet["odds"],
+                edge=bet["edge"],
+                kelly=bet["kelly"],
+                confidence=confidence,
+            )
+        )
+
+
 def generate_signals() -> None:
     logger.info("Generating signals")
     init_db()
     db = SessionLocal()
     try:
+        # Migrate old league names
+        _LEAGUE_MIGRATION = {
+            "Epl": "Premier League",
+            "France Ligue One": "Ligue 1",
+            "Spain La Liga": "La Liga",
+        }
+        for old_name, new_name in _LEAGUE_MIGRATION.items():
+            db.query(Match).filter(Match.league == old_name).update(
+                {"league": new_name}
+            )
+        db.commit()
+
         db.query(Signal).delete()
         db.commit()
 
@@ -200,45 +260,39 @@ def generate_signals() -> None:
                     xg_att_away=away_stats.xg_att_away,
                     xga_def_home=home_stats.xga_def_home,
                     league_avg=lg_avg,
+                    form_home=getattr(home_stats, "form_home", 0.5) or 0.5,
+                    form_away=getattr(away_stats, "form_away", 0.5) or 0.5,
                 )
             else:
                 model_output = _fallback_model(odds)
 
+            # --- h2h signals ---
             model_probs = {
                 "home": model_output.home_win,
                 "draw": model_output.draw,
                 "away": model_output.away_win,
             }
-            value_bets = detect_value_bets(model_probs, odds)
-            for bet in value_bets:
-                confidence = compute_confidence(
-                    edge=bet["edge"],
-                    convergence=0.7,
-                    volume=0.6,
-                    stability=0.65,
-                    inefficiency=0.5,
-                )
-                existing = (
-                    db.query(Signal)
-                    .filter(
-                        Signal.match_id == match.id,
-                        Signal.outcome == bet["outcome"],
-                    )
-                    .first()
-                )
-                if existing:
-                    continue
-                db.add(
-                    Signal(
-                        match_id=match.id,
-                        outcome=bet["outcome"],
-                        probability=bet["probability"],
-                        odds=bet["odds"],
-                        edge=bet["edge"],
-                        kelly=bet["kelly"],
-                        confidence=confidence,
-                    )
-                )
+            _insert_value_signals(db, match, model_probs, odds, "h2h")
+
+            # --- totals (O/U 2.5) signals ---
+            totals_entries = (
+                db.query(Odds)
+                .filter(Odds.match_id == match.id, Odds.market == "totals")
+                .all()
+            )
+            if totals_entries:
+                totals_odds: Dict[str, float] = {}
+                for te in totals_entries:
+                    if te.outcome == "over":
+                        totals_odds["over_25"] = te.odds
+                    elif te.outcome == "under":
+                        totals_odds["under_25"] = te.odds
+                if totals_odds:
+                    totals_probs = {
+                        "over_25": model_output.over_25,
+                        "under_25": model_output.under_25,
+                    }
+                    _insert_value_signals(db, match, totals_probs, totals_odds, "totals")
         db.commit()
     finally:
         db.close()

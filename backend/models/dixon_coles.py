@@ -40,6 +40,8 @@ def run_dixon_coles(
     hfa: float = DEFAULT_HFA,
     rho: float = DEFAULT_RHO,
     max_goals: int = 7,
+    form_home: float = 0.5,
+    form_away: float = 0.5,
 ) -> PoissonOutput:
     """Run Dixon-Coles model and return match probabilities.
 
@@ -61,6 +63,12 @@ def run_dixon_coles(
 
     lambda_home = att_home_ratio * def_away_ratio * league_avg_goals * hfa
     lambda_away = att_away_ratio * def_home_ratio * league_avg_goals
+
+    # Form factor: ±10% adjustment based on recent form (0.0-1.0, 0.5=neutral)
+    form_factor_home = 1.0 + 0.10 * (form_home - 0.5) / 0.5
+    form_factor_away = 1.0 + 0.10 * (form_away - 0.5) / 0.5
+    lambda_home *= form_factor_home
+    lambda_away *= form_factor_away
 
     # Clamp to avoid extreme values
     lambda_home = max(0.2, min(lambda_home, 5.0))
@@ -88,4 +96,6 @@ def run_dixon_coles(
         away_win=summary["away_win"],
         over_25=summary["over_25"],
         under_25=summary["under_25"],
+        btts_yes=summary["btts_yes"],
+        btts_no=summary["btts_no"],
     )

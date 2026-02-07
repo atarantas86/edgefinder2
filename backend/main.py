@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from database.db import SessionLocal, init_db
 from database.history import list_bets, list_performance, list_signals, record_bet
-from database.models import Match, Odds, Signal
+from database.models import Bet, ClosingLine, Match, Odds, Signal
 from engine.analyzer import analyze_match
 from engine.confidence import compute_confidence
 from engine.value_detector import detect_value_bets
@@ -43,7 +43,15 @@ class BetRequest(BaseModel):
     stake: float
 
 
-OUTCOME_LABELS = {"home": "Domicile", "draw": "Nul", "away": "Extérieur"}
+OUTCOME_LABELS = {
+    "home": "Domicile",
+    "draw": "Nul",
+    "away": "Extérieur",
+    "over_25": "Plus de 2.5",
+    "under_25": "Moins de 2.5",
+    "btts_yes": "Les 2 marquent",
+    "btts_no": "Les 2 ne marquent pas",
+}
 
 
 class SignalResponse(BaseModel):
@@ -51,6 +59,7 @@ class SignalResponse(BaseModel):
     match_id: int
     match: str
     market: str
+    market_type: str
     league: str
     kickoff: str
     outcome: str
@@ -59,6 +68,7 @@ class SignalResponse(BaseModel):
     edge: float
     kelly: float
     confidence: float
+    capped: bool
     created_at: datetime
 
 
@@ -98,20 +108,23 @@ def get_signals(db: Session = Depends(get_db)) -> List[SignalResponse]:
     enriched = []
     for s in signals:
         m = db.query(Match).filter(Match.id == s.match_id).first()
+        edge_pct = round(s.edge * 100, 2)
         enriched.append(
             SignalResponse(
                 id=s.id,
                 match_id=s.match_id,
                 match=f"{m.home_team} vs {m.away_team}" if m else "Match inconnu",
                 market=OUTCOME_LABELS.get(s.outcome, s.outcome),
+                market_type=getattr(s, "market_type", None) or "h2h",
                 league=m.league if m else "",
                 kickoff=m.kickoff if m else "",
                 outcome=s.outcome,
                 probability=s.probability,
                 odds=s.odds,
-                edge=round(s.edge * 100, 2),
+                edge=edge_pct,
                 kelly=round(s.kelly * 100, 2),
                 confidence=s.confidence,
+                capped=edge_pct >= 15.0,
                 created_at=s.created_at,
             )
         )
@@ -169,7 +182,59 @@ def place_bet(request: BetRequest, db: Session = Depends(get_db)) -> Dict[str, A
     if not signal:
         raise HTTPException(status_code=404, detail="Signal not found")
     bet = record_bet(db, signal_id=signal.id, stake=request.stake)
+    # Store opening odds from signal
+    bet_obj = db.query(Bet).filter(Bet.id == bet.id).first()
+    if bet_obj:
+        bet_obj.opening_odds = signal.odds
+        db.commit()
     return {"bet": bet}
+
+
+class ClosingOddsRequest(BaseModel):
+    closing_odds: float
+
+
+@app.post("/api/bet/{bet_id}/closing")
+def record_closing_odds(
+    bet_id: int,
+    request: ClosingOddsRequest,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    bet = db.query(Bet).filter(Bet.id == bet_id).first()
+    if not bet:
+        raise HTTPException(status_code=404, detail="Bet not found")
+    opening = bet.opening_odds or bet.signal.odds
+    clv = (request.closing_odds - opening) / opening if opening > 0 else 0.0
+    existing = db.query(ClosingLine).filter(ClosingLine.bet_id == bet_id).first()
+    if existing:
+        existing.closing_odds = request.closing_odds
+        existing.clv = clv
+        existing.recorded_at = datetime.utcnow()
+    else:
+        db.add(
+            ClosingLine(
+                bet_id=bet_id,
+                opening_odds=opening,
+                closing_odds=request.closing_odds,
+                clv=clv,
+            )
+        )
+    db.commit()
+    return {"bet_id": bet_id, "opening_odds": opening, "closing_odds": request.closing_odds, "clv": round(clv * 100, 2)}
+
+
+@app.get("/api/clv")
+def get_clv_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    lines = db.query(ClosingLine).all()
+    if not lines:
+        return {"count": 0, "avg_clv": 0.0, "positive_rate": 0.0}
+    clvs = [cl.clv for cl in lines]
+    positive = sum(1 for c in clvs if c > 0)
+    return {
+        "count": len(clvs),
+        "avg_clv": round(sum(clvs) / len(clvs) * 100, 2),
+        "positive_rate": round(positive / len(clvs) * 100, 1),
+    }
 
 
 @app.post("/api/refresh")

@@ -18,6 +18,8 @@ SPORT_KEYS: Dict[str, Dict[str, Any]] = {
     "soccer_epl": {"league_id": 39, "league_name": "Premier League"},
     "soccer_france_ligue_one": {"league_id": 61, "league_name": "Ligue 1"},
     "soccer_spain_la_liga": {"league_id": 140, "league_name": "La Liga"},
+    "soccer_germany_bundesliga": {"league_id": 78, "league_name": "Bundesliga"},
+    "soccer_italy_serie_a": {"league_id": 135, "league_name": "Serie A"},
 }
 
 
@@ -67,12 +69,7 @@ class OddsAPI:
                 event_dt = datetime.fromisoformat(commence.replace("Z", "+00:00"))
                 min_id = db.query(func.min(Match.fixture_id)).scalar() or 0
                 new_id = min(min_id, 0) - 1
-                league_name_map = {
-                    details["league_id"]: key.replace("soccer_", "").replace("_", " ").title()
-                    for key, details in SPORT_KEYS.items()
-                }
-                league_id = SPORT_KEYS.get(sport, {}).get("league_id")
-                l_name = league_name_map.get(league_id, f"League {league_id}")
+                l_name = SPORT_KEYS.get(sport, {}).get("league_name", f"League {sport}")
                 match = Match(
                     fixture_id=new_id,
                     home_team=home,

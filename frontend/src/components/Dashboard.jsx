@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import BetCard from "./BetCard.jsx";
 import useApi from "../hooks/useApi.js";
 
@@ -8,6 +9,7 @@ const getAverage = (items, key) => {
 };
 
 export default function Dashboard({ bankroll = 2500 }) {
+  const [leagueFilter, setLeagueFilter] = useState("all");
   const {
     data: signalsData,
     loading: signalsLoading,
@@ -16,9 +18,32 @@ export default function Dashboard({ bankroll = 2500 }) {
   const { data: performanceData } = useApi("/api/performance");
 
   const signals = signalsData?.signals ?? signalsData ?? [];
-  const totalSignals = Array.isArray(signals) ? signals.length : 0;
-  const avgEdge = getAverage(signals, "edge");
-  const avgConfidence = getAverage(signals, "confidence");
+
+  // Extract unique leagues for filter
+  const leagues = useMemo(() => {
+    if (!Array.isArray(signals)) return [];
+    const set = new Set(signals.map((s) => s?.league).filter(Boolean));
+    return [...set].sort();
+  }, [signals]);
+
+  // Filter by league then sort: FIABLE first, then by edge desc
+  const sorted = useMemo(() => {
+    if (!Array.isArray(signals)) return [];
+    let filtered = signals;
+    if (leagueFilter !== "all") {
+      filtered = signals.filter((s) => s?.league === leagueFilter);
+    }
+    return [...filtered].sort((a, b) => {
+      const aFiable = Number(a?.edge ?? 0) < 8 ? 0 : 1;
+      const bFiable = Number(b?.edge ?? 0) < 8 ? 0 : 1;
+      if (aFiable !== bFiable) return aFiable - bFiable;
+      return Number(b?.edge ?? 0) - Number(a?.edge ?? 0);
+    });
+  }, [signals, leagueFilter]);
+
+  const totalSignals = Array.isArray(sorted) ? sorted.length : 0;
+  const avgEdge = getAverage(sorted, "edge");
+  const avgConfidence = getAverage(sorted, "confidence");
 
   const summaryCards = [
     {
@@ -60,9 +85,21 @@ export default function Dashboard({ bankroll = 2500 }) {
             {performanceData?.label ?? "Performances calculées en temps réel"}
           </p>
         </div>
-        <span className="rounded-full border border-edge-green/30 bg-edge-green/10 px-3 py-1 text-xs text-edge-green">
-          {signalsLoading ? "Synchronisation..." : "À jour"}
-        </span>
+        <div className="flex items-center gap-3">
+          <select
+            value={leagueFilter}
+            onChange={(e) => setLeagueFilter(e.target.value)}
+            className="rounded-lg border border-white/10 bg-edge-surface px-3 py-1.5 text-xs text-white focus:border-edge-green/50 focus:outline-none"
+          >
+            <option value="all">Toutes les ligues</option>
+            {leagues.map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
+          <span className="rounded-full border border-edge-green/30 bg-edge-green/10 px-3 py-1 text-xs text-edge-green">
+            {signalsLoading ? "Synchronisation..." : "À jour"}
+          </span>
+        </div>
       </div>
 
       {signalsError && (
@@ -83,8 +120,8 @@ export default function Dashboard({ bankroll = 2500 }) {
           </div>
         )}
         {!signalsLoading &&
-          Array.isArray(signals) &&
-          signals.map((signal) => <BetCard key={signal?.id ?? signal?.match} signal={signal} bankroll={bankroll} />)}
+          Array.isArray(sorted) &&
+          sorted.map((signal) => <BetCard key={signal?.id ?? signal?.match} signal={signal} bankroll={bankroll} />)}
       </div>
     </section>
   );

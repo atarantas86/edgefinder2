@@ -25,12 +25,15 @@ LEAGUE_MAP: Dict[str, str] = {
 }
 
 DECAY_ALPHA: float = 0.01
-SHRINKAGE_K: int = 20
+SHRINKAGE_K: int = 50
 
 
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
+
+
+FORM_WINDOW: int = 5
 
 
 @dataclass(frozen=True)
@@ -43,6 +46,8 @@ class TeamXG:
     xga_def_away: float
     matches_home: int
     matches_away: int
+    form_home: float  # 0.0 (all losses) to 1.0 (all wins) over last 5
+    form_away: float
 
 
 @dataclass(frozen=True)
@@ -80,6 +85,25 @@ def _decay_weighted_avg(values: List[float], alpha: float = DECAY_ALPHA) -> floa
 def _shrink(team_avg: float, league_avg: float, n: int, k: int = SHRINKAGE_K) -> float:
     """Bayesian shrinkage toward the league mean."""
     return (n * team_avg + k * league_avg) / (n + k)
+
+
+def _compute_form(pairs: List[Tuple[float, float]]) -> float:
+    """Compute form as points ratio from xG-based results.
+
+    Each pair is (xG_scored, xG_conceded). Win=3pts, draw=1pt, loss=0pt.
+    Returns 0.0 to 1.0 (points / max_points). Default 0.5 if no data.
+    """
+    if not pairs:
+        return 0.5
+    points = 0
+    for scored, conceded in pairs:
+        if scored > conceded + 0.3:  # clear xG win
+            points += 3
+        elif conceded > scored + 0.3:  # clear xG loss
+            points += 0
+        else:  # close = draw
+            points += 1
+    return points / (3 * len(pairs))
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +189,10 @@ def fetch_team_xg(sport_key: str) -> Tuple[Dict[str, TeamXG], LeagueAverages]:
         raw_att_away = _decay_weighted_avg([s for s, _ in away_pairs]) if away_pairs else avg_xg_away
         raw_def_away = _decay_weighted_avg([c for _, c in away_pairs]) if away_pairs else avg_xg_home
 
+        # Form: xG-based points over last FORM_WINDOW matches
+        form_home = _compute_form(home_pairs[:FORM_WINDOW])
+        form_away = _compute_form(away_pairs[:FORM_WINDOW])
+
         result[team] = TeamXG(
             team=team,
             league=sd_league,
@@ -174,6 +202,8 @@ def fetch_team_xg(sport_key: str) -> Tuple[Dict[str, TeamXG], LeagueAverages]:
             xga_def_away=_shrink(raw_def_away, avg_xg_home, n_away),
             matches_home=n_home,
             matches_away=n_away,
+            form_home=form_home,
+            form_away=form_away,
         )
 
     logger.info(f"Fetched xG for {len(result)} teams in {sd_league}")
@@ -240,6 +270,8 @@ def refresh_xg_to_db(db: Session) -> int:
                 existing.xga_def_away = txg.xga_def_away
                 existing.matches_home = txg.matches_home
                 existing.matches_away = txg.matches_away
+                existing.form_home = txg.form_home
+                existing.form_away = txg.form_away
                 existing.updated_at = datetime.utcnow()
             else:
                 db.add(
@@ -253,6 +285,8 @@ def refresh_xg_to_db(db: Session) -> int:
                         xga_def_away=txg.xga_def_away,
                         matches_home=txg.matches_home,
                         matches_away=txg.matches_away,
+                        form_home=txg.form_home,
+                        form_away=txg.form_away,
                     )
                 )
             teams_updated += 1
