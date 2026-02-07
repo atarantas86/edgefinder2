@@ -1,0 +1,28 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-edge-bg text-white font-sans antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 255, 135, 0.5) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 135, 0.35);
+  border-radius: 999px;
+}
