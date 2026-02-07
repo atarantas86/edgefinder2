@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import Depends, FastAPI, HTTPException
+from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -16,7 +17,7 @@ from engine.analyzer import analyze_match
 from engine.confidence import compute_confidence
 from engine.value_detector import detect_value_bets
 from models.poisson import run_bivariate_poisson
-from scheduler import create_scheduler
+from scheduler import create_scheduler, refresh_fixtures, refresh_odds
 
 
 app = FastAPI(title="EdgeFinder API")
@@ -50,8 +51,11 @@ class SignalResponse(BaseModel):
 def _model_from_odds(odds: Dict[str, float]) -> Dict[str, float]:
     total_goals = 2.6
     implied = {key: 1 / value for key, value in odds.items() if value > 1}
-    total_implied = sum(implied.values()) or 1.0
-    normalized = {key: value / total_implied for key, value in implied.items()}
+    if implied:
+        total_implied = sum(implied.values()) or 1.0
+        normalized = {key: value / total_implied for key, value in implied.items()}
+    else:
+        normalized = {"home": 0.45, "draw": 0.25, "away": 0.30}
     home_share = normalized.get("home", 0.45) + 0.5 * normalized.get("draw", 0.25)
     home_xg = total_goals * home_share
     away_xg = total_goals * (1 - home_share)
@@ -131,6 +135,17 @@ def place_bet(request: BetRequest, db: Session = Depends(get_db)) -> Dict[str, A
         raise HTTPException(status_code=404, detail="Signal not found")
     bet = record_bet(db, signal_id=signal.id, stake=request.stake)
     return {"bet": bet}
+
+
+@app.post("/api/refresh")
+def refresh_data() -> Dict[str, Any]:
+    fixtures_added = refresh_fixtures()
+    if fixtures_added == 0:
+        logger.info(
+            "Fixtures API-Football: 0, utilisation Odds API comme source principale"
+        )
+    odds_added = refresh_odds()
+    return {"fixtures_added": fixtures_added, "odds_added": odds_added}
 
 
 @app.get("/api/performance")
