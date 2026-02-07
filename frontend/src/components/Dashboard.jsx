@@ -7,7 +7,7 @@ const getAverage = (items, key) => {
   return total / items.length;
 };
 
-export default function Dashboard() {
+export default function Dashboard({ bankroll = 2500 }) {
   const {
     data: signalsData,
     loading: signalsLoading,
@@ -84,7 +84,7 @@ export default function Dashboard() {
         )}
         {!signalsLoading &&
           Array.isArray(signals) &&
-          signals.map((signal) => <BetCard key={signal?.id ?? signal?.match} signal={signal} />)}
+          signals.map((signal) => <BetCard key={signal?.id ?? signal?.match} signal={signal} bankroll={bankroll} />)}
       </div>
     </section>
   );

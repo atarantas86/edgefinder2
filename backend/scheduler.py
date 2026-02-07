@@ -11,10 +11,18 @@ from loguru import logger
 from data.football_api import FootballAPI
 from data.odds_api import OddsAPI
 from database.db import SessionLocal, init_db
-from database.models import Match, Odds, Signal
+from database.models import Match, Odds, Signal, TeamStats
 from engine.confidence import compute_confidence
+from engine.team_names import normalize_team_name
 from engine.value_detector import detect_value_bets
-from models.poisson import run_bivariate_poisson
+from engine.xg_provider import LeagueAverages, refresh_xg_to_db
+from models.dixon_coles import run_dixon_coles
+from models.poisson import PoissonOutput, run_bivariate_poisson
+
+
+# ---------------------------------------------------------------------------
+# Fixtures & Odds (unchanged)
+# ---------------------------------------------------------------------------
 
 
 def refresh_fixtures() -> int:
@@ -97,11 +105,73 @@ def refresh_odds() -> int:
     return odds_added
 
 
+# ---------------------------------------------------------------------------
+# xG refresh
+# ---------------------------------------------------------------------------
+
+
+def refresh_xg() -> int:
+    """Refresh xG data from Understat (max once per 24 h per league)."""
+    logger.info("Refreshing xG data from Understat")
+    init_db()
+    db = SessionLocal()
+    try:
+        return refresh_xg_to_db(db)
+    except Exception as exc:
+        logger.error(f"xG refresh failed: {exc}")
+        return 0
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Signal generation
+# ---------------------------------------------------------------------------
+
+
+def _fallback_model(odds: Dict[str, float]) -> PoissonOutput:
+    """Derive xG from odds (circular fallback when xG data is unavailable)."""
+    implied = {k: 1 / v for k, v in odds.items() if v > 0}
+    total_implied = sum(implied.values()) or 1.0
+    normalized = {k: v / total_implied for k, v in implied.items()}
+    total_goals = 2.6
+    home_share = normalized.get("home", 0.45) + 0.5 * normalized.get("draw", 0.25)
+    return run_bivariate_poisson(total_goals * home_share, total_goals * (1 - home_share))
+
+
+def _compute_league_averages(all_stats: List[TeamStats]) -> Dict[str, LeagueAverages]:
+    """Group TeamStats by league and compute averages."""
+    buckets: Dict[str, List[TeamStats]] = {}
+    for s in all_stats:
+        buckets.setdefault(s.league, []).append(s)
+
+    result: Dict[str, LeagueAverages] = {}
+    for league, stats in buckets.items():
+        home_vals = [s.xg_att_home for s in stats if s.matches_home > 0]
+        away_vals = [s.xg_att_away for s in stats if s.matches_away > 0]
+        result[league] = LeagueAverages(
+            avg_xg_home=sum(home_vals) / len(home_vals) if home_vals else 1.4,
+            avg_xg_away=sum(away_vals) / len(away_vals) if away_vals else 1.1,
+        )
+    return result
+
+
 def generate_signals() -> None:
     logger.info("Generating signals")
     init_db()
     db = SessionLocal()
     try:
+        db.query(Signal).delete()
+        db.commit()
+
+        # Pre-load xG data
+        all_stats = db.query(TeamStats).all()
+        stats_by_name: Dict[str, TeamStats] = {s.team: s for s in all_stats}
+        league_avgs = _compute_league_averages(all_stats)
+
+        # Known Understat names for fuzzy matching
+        known_names = list(stats_by_name.keys())
+
         matches = db.query(Match).all()
         for match in matches:
             odds_entries = (
@@ -112,14 +182,28 @@ def generate_signals() -> None:
             if not odds_entries:
                 continue
             odds = {entry.outcome: entry.odds for entry in odds_entries}
-            implied = {key: 1 / value for key, value in odds.items()}
-            total_implied = sum(implied.values()) or 1.0
-            normalized = {key: value / total_implied for key, value in implied.items()}
-            total_goals = 2.6
-            home_share = normalized.get("home", 0.45) + 0.5 * normalized.get("draw", 0.25)
-            home_xg = total_goals * home_share
-            away_xg = total_goals * (1 - home_share)
-            model_output = run_bivariate_poisson(home_xg, away_xg)
+
+            # Try Dixon-Coles with independent xG
+            home_us = normalize_team_name(match.home_team, known_names)
+            away_us = normalize_team_name(match.away_team, known_names)
+            home_stats = stats_by_name.get(home_us)
+            away_stats = stats_by_name.get(away_us)
+
+            if home_stats and away_stats:
+                lg_avg = league_avgs.get(
+                    home_stats.league,
+                    LeagueAverages(1.4, 1.1),
+                )
+                model_output = run_dixon_coles(
+                    xg_att_home=home_stats.xg_att_home,
+                    xga_def_away=away_stats.xga_def_away,
+                    xg_att_away=away_stats.xg_att_away,
+                    xga_def_home=home_stats.xga_def_home,
+                    league_avg=lg_avg,
+                )
+            else:
+                model_output = _fallback_model(odds)
+
             model_probs = {
                 "home": model_output.home_win,
                 "draw": model_output.draw,
@@ -160,9 +244,15 @@ def generate_signals() -> None:
         db.close()
 
 
+# ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
+
+
 def create_scheduler() -> BackgroundScheduler:
     scheduler = BackgroundScheduler()
-    scheduler.add_job(refresh_odds, "interval", hours=1)
+    scheduler.add_job(refresh_xg, "cron", hour=5, minute=0)
     scheduler.add_job(refresh_fixtures, "interval", hours=6)
+    scheduler.add_job(refresh_odds, "interval", hours=1)
     scheduler.add_job(generate_signals, "cron", hour=7, minute=0)
     return scheduler

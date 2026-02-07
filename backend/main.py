@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -17,10 +18,16 @@ from engine.analyzer import analyze_match
 from engine.confidence import compute_confidence
 from engine.value_detector import detect_value_bets
 from models.poisson import run_bivariate_poisson
-from scheduler import create_scheduler, refresh_fixtures, refresh_odds
+from scheduler import create_scheduler, generate_signals, refresh_fixtures, refresh_odds, refresh_xg
 
 
 app = FastAPI(title="EdgeFinder API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_db() -> Session:
@@ -36,9 +43,16 @@ class BetRequest(BaseModel):
     stake: float
 
 
+OUTCOME_LABELS = {"home": "Domicile", "draw": "Nul", "away": "Extérieur"}
+
+
 class SignalResponse(BaseModel):
     id: int
     match_id: int
+    match: str
+    market: str
+    league: str
+    kickoff: str
     outcome: str
     probability: float
     odds: float
@@ -80,7 +94,28 @@ def startup_event() -> None:
 
 @app.get("/api/signals", response_model=List[SignalResponse])
 def get_signals(db: Session = Depends(get_db)) -> List[SignalResponse]:
-    return list_signals(db)
+    signals = list_signals(db)
+    enriched = []
+    for s in signals:
+        m = db.query(Match).filter(Match.id == s.match_id).first()
+        enriched.append(
+            SignalResponse(
+                id=s.id,
+                match_id=s.match_id,
+                match=f"{m.home_team} vs {m.away_team}" if m else "Match inconnu",
+                market=OUTCOME_LABELS.get(s.outcome, s.outcome),
+                league=m.league if m else "",
+                kickoff=m.kickoff if m else "",
+                outcome=s.outcome,
+                probability=s.probability,
+                odds=s.odds,
+                edge=round(s.edge * 100, 2),
+                kelly=round(s.kelly * 100, 2),
+                confidence=s.confidence,
+                created_at=s.created_at,
+            )
+        )
+    return enriched
 
 
 @app.get("/api/match/{match_id}")
@@ -139,13 +174,31 @@ def place_bet(request: BetRequest, db: Session = Depends(get_db)) -> Dict[str, A
 
 @app.post("/api/refresh")
 def refresh_data() -> Dict[str, Any]:
-    fixtures_added = refresh_fixtures()
+    # 1) xG from Understat
+    try:
+        xg_updated = refresh_xg()
+    except Exception as exc:
+        logger.warning(f"xG refresh échoué: {exc}")
+        xg_updated = 0
+    # 2) Fixtures from API-Football
+    try:
+        fixtures_added = refresh_fixtures()
+    except Exception as exc:
+        logger.warning(f"API-Football échoué: {exc}")
+        fixtures_added = 0
     if fixtures_added == 0:
         logger.info(
             "Fixtures API-Football: 0, utilisation Odds API comme source principale"
         )
+    # 3) Odds from The Odds API
     odds_added = refresh_odds()
-    return {"fixtures_added": fixtures_added, "odds_added": odds_added}
+    # 4) Generate signals (Dixon-Coles + fallback)
+    generate_signals()
+    return {
+        "xg_updated": xg_updated,
+        "fixtures_added": fixtures_added,
+        "odds_added": odds_added,
+    }
 
 
 @app.get("/api/performance")

@@ -12,14 +12,18 @@ def detect_value_bets(
     market_odds: Dict[str, float],
     threshold: float = 0.03,
 ) -> List[Dict[str, float]]:
-    """Detect value bets when model edge exceeds threshold."""
+    """Detect value bets when model edge exceeds threshold.
+
+    Edge is expected value: ``(odds * probability) - 1``.
+    A 3 % edge means 3 % expected profit per unit staked.
+    """
     value_bets = []
     for outcome, prob in model_probs.items():
         odds = market_odds.get(outcome)
-        if not odds:
+        if not odds or odds > 15.0:
             continue
-        implied_prob = 1.0 / odds
-        edge = prob - implied_prob
+        edge = (odds * prob) - 1.0
+        edge = min(edge, 0.25)
         if edge > threshold:
             value_bets.append(
                 {

@@ -4,7 +4,7 @@ import ConfidenceRing from "./ConfidenceRing.jsx";
 const formatPercent = (value) => `${Number(value ?? 0).toFixed(1)}%`;
 const formatOdds = (value) => Number(value ?? 0).toFixed(2);
 
-export default function BetCard({ signal }) {
+export default function BetCard({ signal, bankroll = 2500 }) {
   const [expanded, setExpanded] = useState(false);
   const {
     match = "Match à venir",
@@ -49,7 +49,7 @@ export default function BetCard({ signal }) {
         </div>
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">Stake</p>
-          <p className="font-mono text-lg">{formatPercent(stake)}</p>
+          <p className="font-mono text-lg">{(bankroll * (Number(kelly ?? 0) / 100)).toFixed(0)}€</p>
         </div>
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">Confiance</p>

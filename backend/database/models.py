@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database.db import Base
@@ -70,6 +70,25 @@ class Bet(Base):
     placed_at = Column(DateTime, default=datetime.utcnow)
 
     signal = relationship("Signal", back_populates="bets")
+
+
+class TeamStats(Base):
+    __tablename__ = "team_stats"
+    __table_args__ = (
+        UniqueConstraint("team", "league", "season", name="uq_team_league_season"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    team = Column(String, nullable=False, index=True)
+    league = Column(String, nullable=False, index=True)
+    season = Column(String, nullable=False)
+    xg_att_home = Column(Float, nullable=False)
+    xg_att_away = Column(Float, nullable=False)
+    xga_def_home = Column(Float, nullable=False)
+    xga_def_away = Column(Float, nullable=False)
+    matches_home = Column(Integer, default=0)
+    matches_away = Column(Integer, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
 
 class PerformanceSnapshot(Base):

@@ -9,3 +9,5 @@ python-dotenv
 pydantic
 numpy
 scipy
+soccerdata
+lxml

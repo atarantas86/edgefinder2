@@ -21,9 +21,8 @@ const Slider = ({ label, value, min, max, step, unit, onChange }) => (
   </div>
 );
 
-export default function Settings() {
-  const [bankroll, setBankroll] = useState(2500);
-  const [edgeMin, setEdgeMin] = useState(3.5);
+export default function Settings({ bankroll, setBankroll }) {
+  const [edgeMin, setEdgeMin] = useState(1);
   const [kelly, setKelly] = useState(40);
 
   return (
