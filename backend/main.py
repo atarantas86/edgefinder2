@@ -16,6 +16,7 @@ from database.history import list_bets, list_performance, list_signals, record_b
 from database.models import Bet, ClosingLine, Match, Odds, Signal
 from engine.analyzer import analyze_match
 from engine.confidence import compute_confidence
+from engine.backtest import BacktestConfig, LEAGUE_CODES, run_backtest
 from engine.value_detector import detect_value_bets
 from models.poisson import run_bivariate_poisson
 from scheduler import create_scheduler, generate_signals, refresh_fixtures, refresh_odds, refresh_xg
@@ -274,3 +275,27 @@ def get_performance(db: Session = Depends(get_db)) -> Dict[str, Any]:
     total_profit = sum(bet.profit for bet in bets)
     roi = (total_profit / total_stake) * 100 if total_stake else 0.0
     return {"performance": performance, "roi": roi, "bets": len(bets)}
+
+
+_BACKTEST_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+@app.get("/api/backtest")
+def get_backtest(
+    seasons: str = "2021,2022,2023",
+    leagues: str = "EPL,La Liga,Bundesliga,Serie A,Ligue 1,Eredivisie,Primeira Liga,Championship,Superliga,Allsvenskan",
+    refresh: bool = False,
+) -> Dict[str, Any]:
+    season_list = [int(s.strip()) for s in seasons.split(",") if s.strip().isdigit()]
+    league_list = [l.strip() for l in leagues.split(",") if l.strip()]
+    cache_key = f"{','.join(map(str, season_list))}:{','.join(league_list)}"
+    if not refresh and cache_key in _BACKTEST_CACHE:
+        return _BACKTEST_CACHE[cache_key]
+    config = BacktestConfig(
+        seasons=season_list,
+        leagues=league_list,
+    )
+    result = run_backtest(config)
+    result["available_leagues"] = list(LEAGUE_CODES.keys())
+    _BACKTEST_CACHE[cache_key] = result
+    return result
