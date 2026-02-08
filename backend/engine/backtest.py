@@ -16,6 +16,8 @@ from models.poisson import run_bivariate_poisson
 
 
 DATE_FORMATS = ("%d/%m/%y", "%d/%m/%Y", "%Y-%m-%d")
+TRAIN_SEASONS = (2021, 2022)
+TEST_SEASONS = (2023,)
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,10 @@ def _parse_date(value: str) -> Optional[datetime]:
         except ValueError:
             continue
     return None
+
+
+def _season_start(date: datetime) -> int:
+    return date.year if date.month >= 7 else date.year - 1
 
 
 def _float_or_none(value: str) -> Optional[float]:
@@ -582,9 +588,15 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
     if not matches:
         return {"error": "No historical data found"}
 
-    split_idx = int(len(matches) * 0.7)
-    train_matches = matches[:split_idx]
-    test_matches = matches[split_idx:]
+    train_seasons = [season for season in config.seasons if season in TRAIN_SEASONS]
+    test_seasons = [season for season in config.seasons if season in TEST_SEASONS]
+
+    train_matches = [match for match in matches if _season_start(match.date) in train_seasons]
+    test_matches = [match for match in matches if _season_start(match.date) in test_seasons]
+    if not train_matches or not test_matches:
+        split_idx = int(len(matches) * 0.7)
+        train_matches = matches[:split_idx]
+        test_matches = matches[split_idx:]
 
     grid_k = [30, 50, 70]
     grid_blend = [0.45, 0.50, 0.55]
@@ -685,6 +697,7 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
             "test": strategies.get("quarter_kelly", {}),
             "avg_clv": _avg_clv(test_bets),
             "best_params": best_params,
+            "split": {"train_seasons": train_seasons, "test_seasons": test_seasons},
         },
         "strategies": strategies,
         "equity_curves": equity_curves,

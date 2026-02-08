@@ -85,7 +85,7 @@ export default function BacktestDashboard() {
         <div>
           <h2 className="text-xl font-semibold">Backtest historique</h2>
           <p className="text-sm text-edge-muted">
-            Analyse sur {summary?.matches ?? 0} matchs, paramètres optimisés + calibration.
+            Analyse sur {summary?.matches ?? 0} matchs, optimisation 2021-2022 & validation 2023.
           </p>
         </div>
         <button
@@ -111,11 +111,16 @@ export default function BacktestDashboard() {
 
       {!loading && data && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-2xl border border-white/5 bg-edge-surface/80 p-4 shadow-glow">
+              <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">ROI train</p>
+              <p className="mt-2 text-2xl font-semibold text-white">{formatPct(summary?.train?.roi, 2)}</p>
+              <p className="text-xs text-edge-muted">Saisons {summary?.split?.train_seasons?.join(", ") || "-"}</p>
+            </div>
             <div className="rounded-2xl border border-white/5 bg-edge-surface/80 p-4 shadow-glow">
               <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">ROI test</p>
               <p className="mt-2 text-2xl font-semibold text-white">{formatPct(summary?.test?.roi, 2)}</p>
-              <p className="text-xs text-edge-muted">Quarter Kelly</p>
+              <p className="text-xs text-edge-muted">Quarter Kelly · {summary?.split?.test_seasons?.join(", ") || "-"}</p>
             </div>
             <div className="rounded-2xl border border-white/5 bg-edge-surface/80 p-4 shadow-glow">
               <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">Max drawdown</p>
@@ -131,6 +136,11 @@ export default function BacktestDashboard() {
               <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">CLV moyen</p>
               <p className="mt-2 text-2xl font-semibold text-white">{formatPct(summary?.avg_clv, 2)}</p>
               <p className="text-xs text-edge-muted">Vs moyenne marché</p>
+            </div>
+            <div className="rounded-2xl border border-white/5 bg-edge-surface/80 p-4 shadow-glow">
+              <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">Bets test</p>
+              <p className="mt-2 text-2xl font-semibold text-white">{summary?.test?.bets ?? 0}</p>
+              <p className="text-xs text-edge-muted">Échantillon out-of-sample</p>
             </div>
           </div>
 
