@@ -287,12 +287,16 @@ def get_backtest(
     markets: str = "totals",
     blend: float = 0.50,
     edge: float = 0.07,
+    split_mode: str = "cross_val",
     refresh: bool = False,
 ) -> Dict[str, Any]:
     season_list = [int(s.strip()) for s in seasons.split(",") if s.strip().isdigit()]
     league_list = [l.strip() for l in leagues.split(",") if l.strip()]
     market_list = tuple(m.strip() for m in markets.split(",") if m.strip())
-    cache_key = f"{','.join(map(str, season_list))}:{','.join(league_list)}:{','.join(market_list)}:{blend}:{edge}"
+    cache_key = (
+        f"{','.join(map(str, season_list))}:{','.join(league_list)}:"
+        f"{','.join(market_list)}:{blend}:{edge}:{split_mode}"
+    )
     if not refresh and cache_key in _BACKTEST_CACHE:
         return _BACKTEST_CACHE[cache_key]
     config = BacktestConfig(
@@ -302,7 +306,7 @@ def get_backtest(
         blend_model_weight=blend,
         edge_threshold=edge,
     )
-    result = run_backtest(config=config)
+    result = run_backtest(config=config, split_mode=split_mode)
     result["available_leagues"] = list(LEAGUE_CODES.keys())
     _BACKTEST_CACHE[cache_key] = result
     return result

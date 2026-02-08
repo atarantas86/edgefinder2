@@ -623,6 +623,7 @@ def run_backtest(
     markets: Optional[Tuple[str, ...]] = None,
     blend_model_weight: Optional[float] = None,
     edge_threshold: Optional[float] = None,
+    split_mode: str = "default",
 ) -> Dict[str, object]:
     resolved_config = _resolve_config(
         config,
@@ -632,6 +633,8 @@ def run_backtest(
         blend_model_weight,
         edge_threshold,
     )
+    if split_mode == "cross_val":
+        return _run_cross_val_backtest(resolved_config)
     matches = load_matches(resolved_config.seasons, resolved_config.leagues)
     if not matches:
         return {"error": "No historical data found"}
@@ -758,3 +761,109 @@ def run_backtest(
         "market_labels": MARKET_LABELS,
     }
     return result
+
+
+def run_backtest_single(
+    *,
+    season: int,
+    leagues: List[str],
+    blend: float,
+    edge: float,
+    hfa: float,
+    base_config: BacktestConfig,
+) -> Dict[str, object]:
+    matches = load_matches([season], leagues)
+    if not matches:
+        return {"roi": float("-inf"), "bets": 0}
+    trial_config = replace(
+        base_config,
+        seasons=[season],
+        leagues=leagues,
+        blend_model_weight=blend,
+        edge_threshold=edge,
+        hfa=hfa,
+    )
+    bets, _ = _simulate(matches, trial_config)
+    _, metrics = _equity_curve(bets, trial_config, "quarter")
+    return {"roi": metrics["roi"], "bets": metrics["bets"]}
+
+
+def optimize_params(
+    *,
+    leagues: List[str],
+    base_config: BacktestConfig,
+) -> Dict[str, float]:
+    best_roi = float("-inf")
+    best_params = {
+        "blend_model_weight": base_config.blend_model_weight,
+        "edge_threshold": base_config.edge_threshold,
+        "hfa": base_config.hfa,
+    }
+    for blend in [0.40, 0.45, 0.50, 0.55]:
+        for edge_thresh in [0.03, 0.05, 0.07]:
+            for hfa in [1.05, 1.07, 1.08]:
+                result = run_backtest_single(
+                    season=2022,
+                    leagues=leagues,
+                    blend=blend,
+                    edge=edge_thresh,
+                    hfa=hfa,
+                    base_config=base_config,
+                )
+                roi = result["roi"]
+                if roi > best_roi:
+                    best_roi = roi
+                    best_params = {
+                        "blend_model_weight": blend,
+                        "edge_threshold": edge_thresh,
+                        "hfa": hfa,
+                    }
+    return best_params
+
+
+def _split_backtest_result(matches: List[MatchRecord], config: BacktestConfig) -> Dict[str, object]:
+    if not matches:
+        return {"metrics": {}, "bets": 0, "calibration": {}}
+    bets, predictions = _simulate(matches, config)
+    equity, metrics = _equity_curve(bets, config, "quarter")
+    return {
+        "metrics": metrics,
+        "equity_curve": equity,
+        "bets": len(bets),
+        "avg_clv": _avg_clv(bets),
+        "calibration": {
+            "h2h": _calibration(predictions["h2h"]),
+            "totals": _calibration(predictions["totals"]),
+            "btts": _calibration(predictions["btts"]),
+        },
+        "edge_distribution": _edge_distribution(bets),
+        "roi_by_league": _roi_by_group(bets, "league"),
+        "roi_by_market": _roi_by_group(bets, "market"),
+    }
+
+
+def _run_cross_val_backtest(resolved_config: BacktestConfig) -> Dict[str, object]:
+    matches = load_matches(resolved_config.seasons, resolved_config.leagues)
+    if not matches:
+        return {"error": "No historical data found"}
+
+    train_matches = [match for match in matches if _season_start(match.date) == 2021]
+    validation_matches = [match for match in matches if _season_start(match.date) == 2022]
+    test_matches = [match for match in matches if _season_start(match.date) == 2023]
+
+    best_params = optimize_params(leagues=resolved_config.leagues, base_config=resolved_config)
+    optimized = replace(
+        resolved_config,
+        blend_model_weight=best_params["blend_model_weight"],
+        edge_threshold=best_params["edge_threshold"],
+        hfa=best_params["hfa"],
+    )
+
+    return {
+        "train": _split_backtest_result(train_matches, optimized),
+        "validation": _split_backtest_result(validation_matches, optimized),
+        "test": _split_backtest_result(test_matches, optimized),
+        "best_params": best_params,
+        "generated_at": datetime.utcnow().isoformat(),
+        "market_labels": MARKET_LABELS,
+    }
