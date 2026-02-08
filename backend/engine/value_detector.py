@@ -13,7 +13,7 @@ BLEND_MARKET: float = 1.0 - BLEND_MODEL
 def detect_value_bets(
     model_probs: Dict[str, float],
     market_odds: Dict[str, float],
-    threshold: float = 0.05,
+    threshold: float = 0.07,
 ) -> List[Dict[str, float]]:
     """Detect value bets when model edge exceeds threshold.
 

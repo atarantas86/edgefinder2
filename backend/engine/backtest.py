@@ -27,7 +27,7 @@ class BacktestConfig:
     shrinkage_k: int = 50
     blend_model_weight: float = 0.50
     hfa: float = 1.07
-    edge_threshold: float = 0.05
+    edge_threshold: float = 0.07
     min_matches: int = 5
     bankroll: float = 1000.0
     flat_stake_pct: float = 0.01

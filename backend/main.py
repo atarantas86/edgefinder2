@@ -283,10 +283,10 @@ _BACKTEST_CACHE: Dict[str, Dict[str, Any]] = {}
 @app.get("/api/backtest")
 def get_backtest(
     seasons: str = "2021,2022,2023",
-    leagues: str = "EPL,La Liga,Bundesliga,Serie A,Ligue 1",
+    leagues: str = "EPL,Serie A",
     markets: str = "totals",
     blend: float = 0.50,
-    edge: float = 0.05,
+    edge: float = 0.07,
     refresh: bool = False,
 ) -> Dict[str, Any]:
     season_list = [int(s.strip()) for s in seasons.split(",") if s.strip().isdigit()]
