@@ -70,15 +70,10 @@ class BetRecord:
 
 LEAGUE_CODES: Dict[str, str] = {
     "EPL": "E0",
-    "La Liga": "SP1",
+    "La_Liga": "SP1",
     "Bundesliga": "D1",
-    "Serie A": "I1",
-    "Ligue 1": "F1",
-    "Eredivisie": "N1",
-    "Primeira Liga": "P1",
-    "Championship": "E1",
-    "Superliga": "DK1",
-    "Allsvenskan": "S1",
+    "Serie_A": "I1",
+    "Ligue_1": "F1",
 }
 
 
@@ -135,7 +130,11 @@ def _get_odds(row: Dict[str, str], candidates: Iterable[str]) -> Optional[float]
     return None
 
 
-def _download_league_csv(season_start: int, league_code: str) -> List[MatchRecord]:
+def _download_league_csv(
+    season_start: int,
+    league_code: str,
+    league_label: str,
+) -> List[MatchRecord]:
     season_code = _season_code(season_start)
     url = f"https://www.football-data.co.uk/mmz4281/{season_code}/{league_code}.csv"
     with httpx.Client(timeout=30.0) as client:
@@ -167,7 +166,7 @@ def _download_league_csv(season_start: int, league_code: str) -> List[MatchRecor
         matches.append(
             MatchRecord(
                 date=date,
-                league=league_code,
+                league=league_label,
                 home=home,
                 away=away,
                 home_goals=home_goals,
@@ -192,7 +191,7 @@ def load_matches(seasons: List[int], leagues: List[str]) -> List[MatchRecord]:
     for league in leagues:
         league_code = LEAGUE_CODES.get(league, league)
         for season in seasons:
-            matches.extend(_download_league_csv(season, league_code))
+            matches.extend(_download_league_csv(season, league_code, league))
     matches.sort(key=lambda m: m.date)
     return matches
 
@@ -615,26 +614,7 @@ def _resolve_config(
     return replace(config, **updates) if updates else config
 
 
-def run_backtest(
-    config: Optional[BacktestConfig] = None,
-    *,
-    seasons: Optional[List[int]] = None,
-    leagues: Optional[List[str]] = None,
-    markets: Optional[Tuple[str, ...]] = None,
-    blend_model_weight: Optional[float] = None,
-    edge_threshold: Optional[float] = None,
-    split_mode: str = "default",
-) -> Dict[str, object]:
-    resolved_config = _resolve_config(
-        config,
-        seasons,
-        leagues,
-        markets,
-        blend_model_weight,
-        edge_threshold,
-    )
-    if split_mode == "cross_val":
-        return _run_cross_val_backtest(resolved_config)
+def _run_standard_backtest(resolved_config: BacktestConfig) -> Dict[str, object]:
     matches = load_matches(resolved_config.seasons, resolved_config.leagues)
     if not matches:
         return {"error": "No historical data found"}
@@ -761,6 +741,40 @@ def run_backtest(
         "market_labels": MARKET_LABELS,
     }
     return result
+
+
+def _run_backtest_for_league(resolved_config: BacktestConfig, split_mode: str) -> Dict[str, object]:
+    if split_mode == "cross_val":
+        return _run_cross_val_backtest(resolved_config)
+    return _run_standard_backtest(resolved_config)
+
+
+def run_backtest(
+    config: Optional[BacktestConfig] = None,
+    *,
+    seasons: Optional[List[int]] = None,
+    leagues: Optional[List[str]] = None,
+    markets: Optional[Tuple[str, ...]] = None,
+    blend_model_weight: Optional[float] = None,
+    edge_threshold: Optional[float] = None,
+    split_mode: str = "default",
+) -> Dict[str, object]:
+    resolved_config = _resolve_config(
+        config,
+        seasons,
+        leagues,
+        markets,
+        blend_model_weight,
+        edge_threshold,
+    )
+    if len(resolved_config.leagues) <= 1:
+        return _run_backtest_for_league(resolved_config, split_mode)
+
+    results: Dict[str, object] = {}
+    for league in resolved_config.leagues:
+        league_config = replace(resolved_config, leagues=[league])
+        results[league] = _run_backtest_for_league(league_config, split_mode)
+    return results
 
 
 def run_backtest_single(

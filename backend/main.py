@@ -283,7 +283,7 @@ _BACKTEST_CACHE: Dict[str, Dict[str, Any]] = {}
 @app.get("/api/backtest")
 def get_backtest(
     seasons: str = "2021,2022,2023,2024,2025",
-    leagues: str = "EPL,La Liga,Bundesliga,Serie A,Ligue 1",
+    leagues: str = "EPL,La_Liga,Bundesliga,Serie_A,Ligue_1",
     markets: str = "totals",
     blend: float = 0.50,
     edge: float = 0.07,
@@ -307,6 +307,18 @@ def get_backtest(
         edge_threshold=edge,
     )
     result = run_backtest(config=config, split_mode=split_mode)
-    result["available_leagues"] = list(LEAGUE_CODES.keys())
+    if len(league_list) == 1:
+        result["available_leagues"] = list(LEAGUE_CODES.keys())
+    else:
+        roi_summary: Dict[str, float] = {}
+        for league, league_result in result.items():
+            if split_mode == "cross_val":
+                metrics = league_result.get("test", {}).get("metrics", {})
+            else:
+                metrics = league_result.get("summary", {}).get("test", {})
+            if metrics and "roi" in metrics:
+                roi_summary[league] = metrics["roi"]
+        if roi_summary:
+            logger.info(f"Backtest ROI test par ligue: {roi_summary}")
     _BACKTEST_CACHE[cache_key] = result
     return result

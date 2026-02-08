@@ -16,7 +16,7 @@ from engine.backtest import (
     _avg_clv,
 )
 
-LEAGUES_ALL = ["EPL", "La Liga", "Bundesliga", "Serie A", "Ligue 1"]
+LEAGUES_ALL = ["EPL", "La_Liga", "Bundesliga", "Serie_A", "Ligue_1"]
 SEASONS = [2021, 2022, 2023]
 
 print("=" * 70, flush=True)
@@ -40,11 +40,11 @@ combos = [
     ("C: blend50 edge7% 5ligs",   0.50, 0.07, None),
     ("D: blend40 edge7% 5ligs",   0.40, 0.07, None),
     ("E: blend40 edge10% 5ligs",  0.40, 0.10, None),
-    ("F: blend50 edge7% EPL+SerA", 0.50, 0.07, {"E0", "I1"}),
-    ("G: blend40 edge5% EPL+SerA", 0.40, 0.05, {"E0", "I1"}),
-    ("H: blend40 edge7% EPL+SerA", 0.40, 0.07, {"E0", "I1"}),
+    ("F: blend50 edge7% EPL+SerA", 0.50, 0.07, {"EPL", "Serie_A"}),
+    ("G: blend40 edge5% EPL+SerA", 0.40, 0.05, {"EPL", "Serie_A"}),
+    ("H: blend40 edge7% EPL+SerA", 0.40, 0.07, {"EPL", "Serie_A"}),
     ("I: blend35 edge7% 5ligs",   0.35, 0.07, None),
-    ("J: blend35 edge5% EPL+SerA", 0.35, 0.05, {"E0", "I1"}),
+    ("J: blend35 edge5% EPL+SerA", 0.35, 0.05, {"EPL", "Serie_A"}),
 ]
 
 print(f"{'Combo':<30s} {'ROI':>7s} {'WinR':>6s} {'Sharpe':>7s} {'DD':>6s} {'Bets':>5s} {'Profit':>9s} {'BankEnd':>8s}", flush=True)
