@@ -283,17 +283,24 @@ _BACKTEST_CACHE: Dict[str, Dict[str, Any]] = {}
 @app.get("/api/backtest")
 def get_backtest(
     seasons: str = "2021,2022,2023",
-    leagues: str = "EPL,La Liga,Bundesliga,Serie A,Ligue 1,Eredivisie,Primeira Liga,Championship,Superliga,Allsvenskan",
+    leagues: str = "EPL,La Liga,Bundesliga,Serie A,Ligue 1",
+    markets: str = "totals",
+    blend: float = 0.50,
+    edge: float = 0.05,
     refresh: bool = False,
 ) -> Dict[str, Any]:
     season_list = [int(s.strip()) for s in seasons.split(",") if s.strip().isdigit()]
     league_list = [l.strip() for l in leagues.split(",") if l.strip()]
-    cache_key = f"{','.join(map(str, season_list))}:{','.join(league_list)}"
+    market_list = tuple(m.strip() for m in markets.split(",") if m.strip())
+    cache_key = f"{','.join(map(str, season_list))}:{','.join(league_list)}:{','.join(market_list)}:{blend}:{edge}"
     if not refresh and cache_key in _BACKTEST_CACHE:
         return _BACKTEST_CACHE[cache_key]
     config = BacktestConfig(
         seasons=season_list,
         leagues=league_list,
+        markets=market_list,
+        blend_model_weight=blend,
+        edge_threshold=edge,
     )
     result = run_backtest(config)
     result["available_leagues"] = list(LEAGUE_CODES.keys())

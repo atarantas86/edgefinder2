@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(timeout:*)",
+      "Bash(curl:*)",
+      "Bash(ping:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(npm install)",
+      "Bash(npm run dev:*)",
+      "WebSearch",
+      "WebFetch(domain:soccerdata.readthedocs.io)",
+      "WebFetch(domain:github.com)",
+      "Bash(pip install:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git -c user.name=\"atarantas86\" -c user.email=\"atarantas86@gmail.com\" commit -m \"$\\(cat <<''EOF''\nIntegrate independent xG data via Understat + Dixon-Coles model\n\nReplace circular odds-derived probabilities with independent xG from\nUnderstat \\(soccerdata\\) and a calibrated Dixon-Coles model. This gives\ngenuine informational edges instead of circular artifacts.\n\nBackend:\n- Add TeamStats model for caching per-team xG data\n- Add xg_provider.py: fetch xG from Understat with exponential decay\n  weighting \\(alpha=0.01\\) and Bayesian shrinkage \\(K=20\\)\n- Add dixon_coles.py: Dixon-Coles model with tau correction, HFA=1.07,\n  lambda normalised by league averages\n- Add team_names.py: ~80 static mappings + fuzzy matching \\(cutoff=0.8\\)\n- Refactor scheduler: refresh_xg at 05:00, Dixon-Coles primary model\n  with circular fallback for unmatched teams\n- Update value_detector: EV edge formula, odds cap at 15, edge cap at\n  25%, threshold at 3%\n- Update main.py: CORS middleware, enriched SignalResponse, refresh\n  endpoint calls xG -> fixtures -> odds -> signals\n\nFrontend:\n- Lift bankroll state to App, pass to Dashboard/BetCard\n- BetCard displays stake in euros \\(bankroll x kelly fraction\\)\n- Settings edge slider default lowered to 1%\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(cmd //c \"taskkill /PID 38632 /F\")",
+      "Bash(git remote set-url:*)",
+      "Bash(gh repo view:*)",
+      "Bash(where:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth status:*)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth login --git-protocol https --web)",
+      "Bash(dir:*)",
+      "Bash(source:*)",
+      "Bash(ss:*)",
+      "Bash(tasklist:*)",
+      "Bash(wmic process:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(uvicorn:*)",
+      "Bash(ls -la \"C:\\\\Users\\\\Thomas\\\\edgefinder2\\\\backend\\\\engine\"\" 2>/dev/null | grep -v \".venv \")"
+    ]
+  }
+}

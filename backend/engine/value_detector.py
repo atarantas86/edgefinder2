@@ -6,19 +6,19 @@ from typing import Dict, List
 
 from models.kelly import kelly_fraction
 
-BLEND_MODEL: float = 0.65
+BLEND_MODEL: float = 0.50
 BLEND_MARKET: float = 1.0 - BLEND_MODEL
 
 
 def detect_value_bets(
     model_probs: Dict[str, float],
     market_odds: Dict[str, float],
-    threshold: float = 0.03,
+    threshold: float = 0.05,
 ) -> List[Dict[str, float]]:
     """Detect value bets when model edge exceeds threshold.
 
-    Probabilities are blended 65 % model + 35 % market-implied to
-    prevent the model from diverging too far from market consensus.
+    Probabilities are blended 50 % model + 50 % market-implied to
+    anchor predictions to market consensus and reduce outsider bias.
     Edge is expected value: ``(odds * blended_prob) - 1``.
     """
     # Compute market-implied probabilities (margin-removed)

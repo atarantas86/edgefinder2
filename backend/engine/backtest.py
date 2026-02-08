@@ -23,13 +23,14 @@ class BacktestConfig:
     seasons: List[int]
     leagues: List[str]
     shrinkage_k: int = 50
-    blend_model_weight: float = 0.65
+    blend_model_weight: float = 0.50
     hfa: float = 1.07
-    edge_threshold: float = 0.03
+    edge_threshold: float = 0.05
     min_matches: int = 5
     bankroll: float = 1000.0
     flat_stake_pct: float = 0.01
     kelly_cap: float = 0.15
+    markets: Tuple[str, ...] = ("totals",)
 
 
 @dataclass
@@ -356,7 +357,7 @@ def _simulate(
                 "btts_no": model.btts_no,
             }
 
-            if match.odds_h and match.odds_d and match.odds_a:
+            if "h2h" in config.markets and match.odds_h and match.odds_d and match.odds_a:
                 market_probs = _market_probs(
                     {"home": match.odds_h, "draw": match.odds_d, "away": match.odds_a}
                 )
@@ -384,7 +385,7 @@ def _simulate(
                             )
                         )
 
-            if match.odds_over25 and match.odds_under25:
+            if "totals" in config.markets and match.odds_over25 and match.odds_under25:
                 market_probs = _market_probs(
                     {"over_25": match.odds_over25, "under_25": match.odds_under25}
                 )
@@ -410,7 +411,7 @@ def _simulate(
                             )
                         )
 
-            if match.odds_btts_yes and match.odds_btts_no:
+            if "btts" in config.markets and match.odds_btts_yes and match.odds_btts_no:
                 market_probs = _market_probs(
                     {"btts_yes": match.odds_btts_yes, "btts_no": match.odds_btts_no}
                 )
@@ -586,9 +587,9 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
     test_matches = matches[split_idx:]
 
     grid_k = [30, 50, 70]
-    grid_blend = [0.55, 0.65, 0.75]
-    grid_hfa = [1.03, 1.07, 1.11]
-    grid_edge = [0.01, 0.03, 0.05]
+    grid_blend = [0.45, 0.50, 0.55]
+    grid_hfa = [1.05, 1.08, 1.11]
+    grid_edge = [0.05, 0.07, 0.10]
 
     best_params = {
         "shrinkage_k": config.shrinkage_k,
@@ -598,11 +599,28 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
     }
     best_roi = float("-inf")
 
+    # Optimized: simulate once per (k, blend, hfa) with edge=0,
+    # then filter bets by each edge threshold (avoids redundant Poisson runs).
     for k in grid_k:
         for blend in grid_blend:
             for hfa in grid_hfa:
+                trial_base = BacktestConfig(
+                    seasons=config.seasons,
+                    leagues=config.leagues,
+                    shrinkage_k=k,
+                    blend_model_weight=blend,
+                    hfa=hfa,
+                    edge_threshold=0.0,
+                    min_matches=config.min_matches,
+                    bankroll=config.bankroll,
+                    flat_stake_pct=config.flat_stake_pct,
+                    kelly_cap=config.kelly_cap,
+                    markets=config.markets,
+                )
+                all_bets, _ = _simulate(train_matches, trial_base)
                 for edge in grid_edge:
-                    trial = BacktestConfig(
+                    filtered = [b for b in all_bets if b.edge > edge]
+                    trial_for_equity = BacktestConfig(
                         seasons=config.seasons,
                         leagues=config.leagues,
                         shrinkage_k=k,
@@ -613,10 +631,10 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
                         bankroll=config.bankroll,
                         flat_stake_pct=config.flat_stake_pct,
                         kelly_cap=config.kelly_cap,
+                        markets=config.markets,
                     )
-                    bets, _ = _simulate(train_matches, trial)
-                    equity, metrics = _equity_curve(bets, trial, "quarter")
-                    if metrics["bets"] < 50:
+                    equity, metrics = _equity_curve(filtered, trial_for_equity, "quarter")
+                    if metrics["bets"] < 30:
                         continue
                     if metrics["roi"] > best_roi:
                         best_roi = metrics["roi"]
@@ -638,6 +656,7 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
         bankroll=config.bankroll,
         flat_stake_pct=config.flat_stake_pct,
         kelly_cap=config.kelly_cap,
+        markets=config.markets,
     )
 
     train_bets, train_predictions = _simulate(train_matches, optimized)
