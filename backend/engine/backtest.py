@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -16,8 +16,8 @@ from models.poisson import run_bivariate_poisson
 
 
 DATE_FORMATS = ("%d/%m/%y", "%d/%m/%Y", "%Y-%m-%d")
-TRAIN_SEASONS = (2021, 2022)
-TEST_SEASONS = (2023,)
+TRAIN_SEASONS = (2021, 2022, 2023, 2024)
+TEST_SEASONS = (2025,)
 
 
 @dataclass(frozen=True)
@@ -583,13 +583,61 @@ def _avg_clv(bets: List[BetRecord]) -> float:
     return round(sum(clvs) / len(clvs) * 100, 2)
 
 
-def run_backtest(config: BacktestConfig) -> Dict[str, object]:
-    matches = load_matches(config.seasons, config.leagues)
+def _resolve_config(
+    config: Optional[BacktestConfig],
+    seasons: Optional[List[int]],
+    leagues: Optional[List[str]],
+    markets: Optional[Tuple[str, ...]],
+    blend_model_weight: Optional[float],
+    edge_threshold: Optional[float],
+) -> BacktestConfig:
+    if config is None:
+        if not seasons or not leagues:
+            raise ValueError("seasons and leagues are required when config is not provided")
+        return BacktestConfig(
+            seasons=seasons,
+            leagues=leagues,
+            markets=markets or ("totals",),
+            blend_model_weight=blend_model_weight or 0.50,
+            edge_threshold=edge_threshold or 0.07,
+        )
+    updates = {}
+    if seasons is not None:
+        updates["seasons"] = seasons
+    if leagues is not None:
+        updates["leagues"] = leagues
+    if markets is not None:
+        updates["markets"] = markets
+    if blend_model_weight is not None:
+        updates["blend_model_weight"] = blend_model_weight
+    if edge_threshold is not None:
+        updates["edge_threshold"] = edge_threshold
+    return replace(config, **updates) if updates else config
+
+
+def run_backtest(
+    config: Optional[BacktestConfig] = None,
+    *,
+    seasons: Optional[List[int]] = None,
+    leagues: Optional[List[str]] = None,
+    markets: Optional[Tuple[str, ...]] = None,
+    blend_model_weight: Optional[float] = None,
+    edge_threshold: Optional[float] = None,
+) -> Dict[str, object]:
+    resolved_config = _resolve_config(
+        config,
+        seasons,
+        leagues,
+        markets,
+        blend_model_weight,
+        edge_threshold,
+    )
+    matches = load_matches(resolved_config.seasons, resolved_config.leagues)
     if not matches:
         return {"error": "No historical data found"}
 
-    train_seasons = [season for season in config.seasons if season in TRAIN_SEASONS]
-    test_seasons = [season for season in config.seasons if season in TEST_SEASONS]
+    train_seasons = [season for season in resolved_config.seasons if season in TRAIN_SEASONS]
+    test_seasons = [season for season in resolved_config.seasons if season in TEST_SEASONS]
 
     train_matches = [match for match in matches if _season_start(match.date) in train_seasons]
     test_matches = [match for match in matches if _season_start(match.date) in test_seasons]
@@ -604,10 +652,10 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
     grid_edge = [0.05, 0.07, 0.10]
 
     best_params = {
-        "shrinkage_k": config.shrinkage_k,
-        "blend_model_weight": config.blend_model_weight,
-        "hfa": config.hfa,
-        "edge_threshold": config.edge_threshold,
+        "shrinkage_k": resolved_config.shrinkage_k,
+        "blend_model_weight": resolved_config.blend_model_weight,
+        "hfa": resolved_config.hfa,
+        "edge_threshold": resolved_config.edge_threshold,
     }
     best_roi = float("-inf")
 
@@ -617,33 +665,33 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
         for blend in grid_blend:
             for hfa in grid_hfa:
                 trial_base = BacktestConfig(
-                    seasons=config.seasons,
-                    leagues=config.leagues,
+                    seasons=resolved_config.seasons,
+                    leagues=resolved_config.leagues,
                     shrinkage_k=k,
                     blend_model_weight=blend,
                     hfa=hfa,
                     edge_threshold=0.0,
-                    min_matches=config.min_matches,
-                    bankroll=config.bankroll,
-                    flat_stake_pct=config.flat_stake_pct,
-                    kelly_cap=config.kelly_cap,
-                    markets=config.markets,
+                    min_matches=resolved_config.min_matches,
+                    bankroll=resolved_config.bankroll,
+                    flat_stake_pct=resolved_config.flat_stake_pct,
+                    kelly_cap=resolved_config.kelly_cap,
+                    markets=resolved_config.markets,
                 )
                 all_bets, _ = _simulate(train_matches, trial_base)
                 for edge in grid_edge:
                     filtered = [b for b in all_bets if b.edge > edge]
                     trial_for_equity = BacktestConfig(
-                        seasons=config.seasons,
-                        leagues=config.leagues,
+                        seasons=resolved_config.seasons,
+                        leagues=resolved_config.leagues,
                         shrinkage_k=k,
                         blend_model_weight=blend,
                         hfa=hfa,
                         edge_threshold=edge,
-                        min_matches=config.min_matches,
-                        bankroll=config.bankroll,
-                        flat_stake_pct=config.flat_stake_pct,
-                        kelly_cap=config.kelly_cap,
-                        markets=config.markets,
+                        min_matches=resolved_config.min_matches,
+                        bankroll=resolved_config.bankroll,
+                        flat_stake_pct=resolved_config.flat_stake_pct,
+                        kelly_cap=resolved_config.kelly_cap,
+                        markets=resolved_config.markets,
                     )
                     equity, metrics = _equity_curve(filtered, trial_for_equity, "quarter")
                     if metrics["bets"] < 30:
@@ -658,17 +706,17 @@ def run_backtest(config: BacktestConfig) -> Dict[str, object]:
                         }
 
     optimized = BacktestConfig(
-        seasons=config.seasons,
-        leagues=config.leagues,
+        seasons=resolved_config.seasons,
+        leagues=resolved_config.leagues,
         shrinkage_k=best_params["shrinkage_k"],
         blend_model_weight=best_params["blend_model_weight"],
         hfa=best_params["hfa"],
         edge_threshold=best_params["edge_threshold"],
-        min_matches=config.min_matches,
-        bankroll=config.bankroll,
-        flat_stake_pct=config.flat_stake_pct,
-        kelly_cap=config.kelly_cap,
-        markets=config.markets,
+        min_matches=resolved_config.min_matches,
+        bankroll=resolved_config.bankroll,
+        flat_stake_pct=resolved_config.flat_stake_pct,
+        kelly_cap=resolved_config.kelly_cap,
+        markets=resolved_config.markets,
     )
 
     train_bets, train_predictions = _simulate(train_matches, optimized)

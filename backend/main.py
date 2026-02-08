@@ -282,8 +282,8 @@ _BACKTEST_CACHE: Dict[str, Dict[str, Any]] = {}
 
 @app.get("/api/backtest")
 def get_backtest(
-    seasons: str = "2021,2022,2023",
-    leagues: str = "EPL,Serie A",
+    seasons: str = "2021,2022,2023,2024,2025",
+    leagues: str = "EPL,La Liga,Bundesliga,Serie A,Ligue 1",
     markets: str = "totals",
     blend: float = 0.50,
     edge: float = 0.07,
@@ -302,7 +302,7 @@ def get_backtest(
         blend_model_weight=blend,
         edge_threshold=edge,
     )
-    result = run_backtest(config)
+    result = run_backtest(config=config)
     result["available_leagues"] = list(LEAGUE_CODES.keys())
     _BACKTEST_CACHE[cache_key] = result
     return result

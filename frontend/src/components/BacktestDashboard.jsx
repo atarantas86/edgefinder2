@@ -85,7 +85,7 @@ export default function BacktestDashboard() {
         <div>
           <h2 className="text-xl font-semibold">Backtest historique</h2>
           <p className="text-sm text-edge-muted">
-            Analyse sur {summary?.matches ?? 0} matchs, optimisation 2021-2022 & validation 2023.
+            Analyse sur {summary?.matches ?? 0} matchs, optimisation 2021-2024 & validation 2025.
           </p>
         </div>
         <button
@@ -118,7 +118,7 @@ export default function BacktestDashboard() {
               <p className="text-xs text-edge-muted">Saisons {summary?.split?.train_seasons?.join(", ") || "-"}</p>
             </div>
             <div className="rounded-2xl border border-white/5 bg-edge-surface/80 p-4 shadow-glow">
-              <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">ROI test</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-edge-muted">ROI test (2025)</p>
               <p className="mt-2 text-2xl font-semibold text-white">{formatPct(summary?.test?.roi, 2)}</p>
               <p className="text-xs text-edge-muted">Quarter Kelly · {summary?.split?.test_seasons?.join(", ") || "-"}</p>
             </div>
